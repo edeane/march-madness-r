@@ -10,7 +10,7 @@
 
 rm(list=ls())
 
-setwd("W:/March_Madness")
+setwd("W:/March_Madness/march-madness-r/")
 
 require(dplyr)
 require(tidyr)
