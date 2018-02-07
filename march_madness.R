@@ -20,56 +20,33 @@ require(xgboost)
 require(caret)
 
 #read in data
-tourney.seeds <- read.csv('data/TourneySeeds.csv')
 tourney.compact.results <- read.csv('data/TourneyCompactResults.csv')
-regular.season.compact.results <- read.csv('data/RegularSeasonCompactResults.csv')
 regular.season.detailed.results <- read.csv('data/RegularSeasonDetailedResults.csv')
+tourney.seeds <- read.csv('data/TourneySeeds.csv')
 sample.submission <- read.csv('data/SampleSubmission.csv')
 
-#create train data with only data >= to 2003 because we have detailed results from 2003 to today
-train <- tourney.compact.results[tourney.compact.results$Season >= 2003, c('Season', 'Wteam', 'Lteam')]
-train$first.team <- pmin(train$Wteam, train$Lteam)
-train$second.team <- pmax(train$Wteam, train$Lteam)
-train$first.team.win <- 0
-train$first.team.win[train$Wteam==train$first.team] <- 1
+# heads
+head(regular.season.detailed.results)
+head(tourney.compact.results)
+head(tourney.seeds)
+head(sample.submission)
 
-# create win loss data frame by season with percent win
-# season.wins <- regular.season.compact.results %>% group_by(Season, Wteam) %>% tally()
-# season.losses <- regular.season.compact.results %>% group_by(Season, Lteam) %>% tally()
-# season.wins.losses <- full_join(season.wins, season.losses, by=c('Season', 'Wteam' = 'Lteam'))
-# colnames(season.wins.losses)[2:4] <- c('team', 'wins', 'loses')
-# season.wins.losses[is.na(season.wins.losses)] <- 0
-# season.wins.losses$percent.win <- season.wins.losses$wins / (season.wins.losses$wins+season.wins.losses$loses)
-# head(season.wins.losses)
+# setting up tourney results data
+tour.res.reg.seas.stats <- tourney.compact.results[tourney.compact.results$Season >= 2003, c('Season', 'Wteam', 'Lteam')]
+tour.res.reg.seas.stats$first.team <- pmin(tour.res.reg.seas.stats$Wteam, tour.res.reg.seas.stats$Lteam)
+tour.res.reg.seas.stats$second.team <- pmax(tour.res.reg.seas.stats$Wteam, tour.res.reg.seas.stats$Lteam)
+tour.res.reg.seas.stats$first.team.win <- 0
+tour.res.reg.seas.stats$first.team.win[tour.res.reg.seas.stats$Wteam==tour.res.reg.seas.stats$first.team] <- 1
 
-# create win average margin and loss average margin
-# regular.season.compact.results$win.margin <- regular.season.compact.results$Wscore - regular.season.compact.results$Lscore
-# mean.win.margin <- regular.season.compact.results %>% group_by(Season, Wteam) %>% summarize(mean.win.margin = mean(win.margin, na.rm=T))
-# mean.loss.margin <- regular.season.compact.results %>% group_by(Season, Lteam) %>% summarize(mean.loss.margin = mean(win.margin, na.rm=T))
-# mean.win.loss.margin <- full_join(mean.win.margin, mean.loss.margin, by=c('Season', 'Wteam' = 'Lteam'))
-# mean.win.loss.margin[is.na(mean.win.loss.margin)] <- 0
-# colnames(mean.win.loss.margin)[2:4] <- c('team', 'mean.win.margin', 'mean.loss.margin')
-# head(mean.win.loss.margin)
+# joining tourney seed data
+tour.res.reg.seas.stats <- tour.res.reg.seas.stats %>% left_join(tourney.seeds, by=c('Season', 'first.team' = 'Team')) %>% 
+  left_join(tourney.seeds, by=c('Season', 'second.team' = 'Team'), suffix=c('.first.team', '.second.team'))
+tour.res.reg.seas.stats$Seed.first.team <- as.numeric(str_extract(tour.res.reg.seas.stats$Seed.first.team, '[:digit:]+'))
+tour.res.reg.seas.stats$Seed.second.team <- as.numeric(str_extract(tour.res.reg.seas.stats$Seed.second.team, '[:digit:]+'))
+tour.res.reg.seas.stats$seed.difference <- tour.res.reg.seas.stats$Seed.first.team - tour.res.reg.seas.stats$Seed.second.team
+head(tour.res.reg.seas.stats, 10)
 
-# joining wins and losses percentages
-# train <- left_join(left_join(train, season.wins.losses[,c('Season', 'team', 'percent.win')], by=c('Season', 'first.team' = 'team')), season.wins.losses[,c('Season', 'team', 'percent.win')], by=c('Season', 'second.team' = 'team'), suffix=c('.first.team', '.second.team'))
-# train$percent.win.difference <- train$percent.win.second.team - train$percent.win.first.team
-# head(train, 10)
-
-# joining win and los margins
-# train <- left_join(left_join(train, mean.win.loss.margin, by=c('Season', 'first.team' = 'team')), mean.win.loss.margin, by=c('Season', 'second.team' = 'team'), suffix=c('.first.team', '.second.team'))
-# train$mean.win.margin.difference <-  train$mean.win.margin.second.team - train$mean.win.margin.first.team
-# train$mean.loss.margin.difference <- train$mean.loss.margin.second.team - train$mean.loss.margin.first.team
-# head(train)
-
-# joining seed data
-train <- left_join(left_join(train, tourney.seeds, by=c('Season', 'first.team' = 'Team')), tourney.seeds, by=c('Season', 'second.team' = 'Team'), suffix=c('.first.team', '.second.team'))
-train$Seed.first.team <- as.numeric(str_extract(train$Seed.first.team, '[:digit:]+'))
-train$Seed.second.team <- as.numeric(str_extract(train$Seed.second.team, '[:digit:]+'))
-train$seed.difference <- train$Seed.first.team - train$Seed.second.team
-head(train, 10)
-
-# organizing detailed stats to join
+# organizing regular season detailed stats to join
 regular.season.detailed.results$win.margin <- regular.season.detailed.results$Wscore - regular.season.detailed.results$Lscore
 regular.season.detailed.results$w.dr.plus.l.or <- regular.season.detailed.results$Wdr + regular.season.detailed.results$Lor
 regular.season.detailed.results$w.or.plus.l.dr <- regular.season.detailed.results$Wor + regular.season.detailed.results$Ldr
@@ -85,7 +62,7 @@ colnames(loser.history) <- c("season","team","daynum","score","numot","fgmade","
 reg.seas.det.join <- rbind(winner.history, loser.history)
 reg.seas.det.join$steal.plus.block <- reg.seas.det.join$steal + reg.seas.det.join$block
 
-#agging some stats
+# agging regular season detailed stats
 reg.seas.det.mean <- reg.seas.det.join %>% group_by(season, team) %>% summarise_all(mean, na.rm=T)
 reg.seas.det.sum <- reg.seas.det.join %>% group_by(season, team) %>% summarise_all(sum, na.rm=T)
 reg.seas.det.sum$fg.per <- reg.seas.det.sum$fgmade / reg.seas.det.sum$fgattempt
@@ -98,12 +75,70 @@ sum.columns <- c('season', 'team', 'fg.per', 'fg.three.per', 'ft.per', 'dr.per',
 mean.columns <- c('season', 'team', 'score.margin', 'numot', 'pfoul', 'steal.plus.block', 'victory')
 reg.seas.det.mean <- reg.seas.det.mean %>% select(mean.columns)
 reg.seas.det.sum <- reg.seas.det.sum %>% select(sum.columns)
+colnames(tour.res.reg.seas.stats)[1] <- 'season'
 
-# join stats
-colnames(train)[1] <- 'season'
-train <- left_join(train, reg.seas.det.mean, by=c('season', "first.team" = "team")) %>%
+
+
+join.reg.seas.stats <- function(tour.seas.first.second){
+  # joins regular season stats to tournment season, first team, second team data frame
+  # then calcs differences between first team and second teams stats
+  # then scales / normalizes the data
+  
+  
+  # join regular season stats to tournement results
+  tour.seas.first.second <- tour.seas.first.second %>% left_join(reg.seas.det.mean, by=c('season', "first.team" = "team")) %>%
+    left_join(reg.seas.det.mean, by=c('season', "second.team" = "team"), suffix=c('.first.team', '.second.team'))
+  tour.seas.first.second <- tour.seas.first.second %>% left_join(reg.seas.det.sum, by=c('season', "first.team" = "team")) %>%
+    left_join(reg.seas.det.sum, by=c('season', "second.team" = "team"), suffix=c('.first.team', '.second.team'))
+  
+  # calc differences between first and second team
+  for (column.name in sum.columns[3:length(sum.columns)]){
+    res <- paste(column.name, '.difference', sep='')
+    first.col <- paste(column.name, '.first.team', sep='')
+    second.col <- paste(column.name, '.second.team', sep='')
+    tour.seas.first.second[, res] <- tour.seas.first.second[, first.col] - tour.seas.first.second[, second.col]
+  }
+  for (column.name in mean.columns[3:length(mean.columns)]){
+    res <- paste(column.name, '.difference', sep='')
+    first.col <- paste(column.name, '.first.team', sep='')
+    second.col <- paste(column.name, '.second.team', sep='')
+    tour.seas.first.second[, res] <- tour.seas.first.second[, first.col] - tour.seas.first.second[, second.col]
+  }
+  
+  # scale data
+  scaled.columns <- c(colnames(tour.seas.first.second)[grepl('.difference', colnames(tour.seas.first.second))])
+  scaled.tour.seas.first.second <- scale(tour.seas.first.second[, scaled.columns])
+  tour.seas.first.second <- cbind(tour.seas.first.second[, !colnames(tour.seas.first.second) %in% scaled.columns], scaled.tour.seas.first.second)
+  head(tour.seas.first.second)
+  return(tour.seas.first.second)
+}
+
+#make it reutrn season first team second team and first team win if it's in there
+tour.res.reg.seas.stats <- join.reg.seas.stats(tour.res.reg.seas.stats)
+head(tour.res.reg.seas.stats)
+
+
+train <- tour.res.reg.seas.stats[tour.res.reg.seas.stats$season <= 2013, ]
+test <- tour.res.reg.seas.stats[tour.res.reg.seas.stats$season > 2013, ]
+
+# create score data
+score <- separate(sample.submission, Id, c('Season', 'first.team', 'second.team'), '_')
+score$Season <- as.numeric(score$Season)
+score$first.team <- as.numeric(score$first.team)
+score$second.team <- as.numeric(score$second.team)
+
+# add tourney seeds
+score <- left_join(left_join(score, tourney.seeds, by=c('Season', 'first.team' = 'Team')), tourney.seeds, by=c('Season', 'second.team' = 'Team'), suffix=c('.first.team', '.second.team'))
+score$Seed.first.team <- as.numeric(str_extract(score$Seed.first.team, '[:digit:]+'))
+score$Seed.second.team <- as.numeric(str_extract(score$Seed.second.team, '[:digit:]+'))
+score$seed.difference <- score$Seed.first.team - score$Seed.second.team
+
+# abc
+head(score)
+colnames(score)[1] <- 'season'
+score <- score %>% left_join(reg.seas.det.mean, by=c('season', "first.team" = "team")) %>%
   left_join(reg.seas.det.mean, by=c('season', "second.team" = "team"), suffix=c('.first.team', '.second.team'))
-train <- train %>% left_join(reg.seas.det.sum, by=c('season', "first.team" = "team")) %>%
+score <- score %>% left_join(reg.seas.det.sum, by=c('season', "first.team" = "team")) %>%
   left_join(reg.seas.det.sum, by=c('season', "second.team" = "team"), suffix=c('.first.team', '.second.team'))
 
 # calc differences
@@ -111,24 +146,15 @@ for (column.name in sum.columns[3:length(sum.columns)]){
   res <- paste(column.name, '.difference', sep='')
   first.col <- paste(column.name, '.first.team', sep='')
   second.col <- paste(column.name, '.second.team', sep='')
-  train[, res] <- train[, first.col] - train[, second.col]
+  score[, res] <- score[, first.col] - score[, second.col]
 }
 for (column.name in mean.columns[3:length(mean.columns)]){
   res <- paste(column.name, '.difference', sep='')
   first.col <- paste(column.name, '.first.team', sep='')
   second.col <- paste(column.name, '.second.team', sep='')
-  train[, res] <- train[, first.col] - train[, second.col]
+  score[, res] <- score[, first.col] - score[, second.col]
 }
-
-# keep only target and difference columns
-info.columns <- c('season', 'first.team', 'second.team')
-scaled.columns <- c(colnames(train)[grepl('.difference', colnames(train))])
-scaled.train <- scale(train[, scaled.columns])
-target.label <- train['first.team.win']
-train <- cbind(train[info.columns], target.label, scaled.train)
-
-dev <- train[train$season <= 2013, ]
-val <- train[train$season > 2013, ]
+score <- scale(score[, scaled.columns])
 
 # train log reg model
 train.logit <- glm(first.team.win ~ ., data=dev)
@@ -181,50 +207,6 @@ train$prediction <- predict(train.logit, train)
 head(train)
 print(paste('train log loss:', mult_log_loss(train$first.team.win, train$prediction)))
 
-# create score data
-score <- separate(sample.submission, Id, c('Season', 'first.team', 'second.team'), '_')
-score$Season <- as.numeric(score$Season)
-score$first.team <- as.numeric(score$first.team)
-score$second.team <- as.numeric(score$second.team)
-
-# add tourney seeds
-score <- left_join(left_join(score, tourney.seeds, by=c('Season', 'first.team' = 'Team')), tourney.seeds, by=c('Season', 'second.team' = 'Team'), suffix=c('.first.team', '.second.team'))
-score$Seed.first.team <- as.numeric(str_extract(score$Seed.first.team, '[:digit:]+'))
-score$Seed.second.team <- as.numeric(str_extract(score$Seed.second.team, '[:digit:]+'))
-score$seed.difference <- score$Seed.first.team - score$Seed.second.team
-
-# add win percents
-# score <- left_join(left_join(score, w_l_season[,c('Season', 'team', 'percent_win')], by=c('Season', 'FirstTeam' = 'team')), w_l_season[,c('Season', 'team', 'percent_win')], by=c('Season', 'SecondTeam' = 'team'), suffix=c('.FirstTeam', '.SecondTeam'))
-# score$percent_win_difference <- score$percent_win.FirstTeam - score$percent_win.SecondTeam
-
-# add win and loss margins
-# score <- left_join(left_join(score, mean_w_l_margin, by=c('Season', 'FirstTeam' = 'team')), mean_w_l_margin, by=c('Season', 'SecondTeam' = 'team'), suffix=c('.FirstTeam', '.SecondTeam'))
-# score$mean_win_margin_difference <- score$mean_wins_margin.FirstTeam - score$mean_wins_margin.SecondTeam
-# score$mean_loss_margin_difference <- score$mean_loss_margin.FirstTeam - score$mean_loss_margin.SecondTeam
-# head(score)
-
-# add stats
-head(score)
-colnames(score)[1] <- 'season'
-score <- score %>% left_join(reg.seas.det.mean, by=c('season', "first.team" = "team")) %>%
-  left_join(reg.seas.det.mean, by=c('season', "second.team" = "team"), suffix=c('.first.team', '.second.team'))
-score <- score %>% left_join(reg.seas.det.sum, by=c('season', "first.team" = "team")) %>%
-  left_join(reg.seas.det.sum, by=c('season', "second.team" = "team"), suffix=c('.first.team', '.second.team'))
-
-# calc differences
-for (column.name in sum.columns[3:length(sum.columns)]){
-  res <- paste(column.name, '.difference', sep='')
-  first.col <- paste(column.name, '.first.team', sep='')
-  second.col <- paste(column.name, '.second.team', sep='')
-  score[, res] <- score[, first.col] - score[, second.col]
-}
-for (column.name in mean.columns[3:length(mean.columns)]){
-  res <- paste(column.name, '.difference', sep='')
-  first.col <- paste(column.name, '.first.team', sep='')
-  second.col <- paste(column.name, '.second.team', sep='')
-  score[, res] <- score[, first.col] - score[, second.col]
-}
-score <- scale(score[, scaled.columns])
 
 # score log reg
 # sample.submission$Pred <- predict(train.logit, as.data.frame(score))
